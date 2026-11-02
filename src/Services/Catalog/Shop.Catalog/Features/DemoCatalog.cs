@@ -1,6 +1,8 @@
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Shop.Catalog.Data;
 using Shop.Catalog.Products;
+using Shop.Contracts.Catalog;
 
 namespace Shop.Catalog.Features;
 
@@ -45,6 +47,7 @@ internal static class DemoCatalog
         }
 
         var now = scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow();
+        var publish = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
         var offset = 0;
         foreach (var (categoryName, products) in Items)
         {
@@ -53,7 +56,9 @@ internal static class DemoCatalog
             foreach (var (sku, name, description, price) in products)
             {
                 // Spread the creation times so "newest first" has a stable, meaningful order.
-                db.Products.Add(Product.Create(sku, name, description, price, category.Id, now.AddMinutes(-offset++)));
+                var product = Product.Create(sku, name, description, price, category.Id, now.AddMinutes(-offset++));
+                db.Products.Add(product);
+                await publish.Publish(new ProductCreated(product.Id, product.Sku, product.Name, product.Price, product.CreatedAt), ct);
             }
         }
 

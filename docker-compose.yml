@@ -1,5 +1,5 @@
 # One command: docker compose up --build
-# Shop API through the gateway: http://localhost:8080 (reference at /scalar)
+# Shop API through the gateway: http://localhost:8080 (reference at /scalar); RabbitMQ console: http://localhost:15672
 name: shop
 
 x-service: &service
@@ -18,6 +18,12 @@ x-database: &database
   Database__MigrateOnStartup: "true"
   Jwt__PublicKeyPath: /keys/public/public.pem
   ASPNETCORE_ENVIRONMENT: Production
+  ConnectionStrings__RabbitMq: amqp://shop:${RABBITMQ_PASSWORD:-shop-local}@rabbitmq:5672
+
+x-messaging: &messaging
+  db: { condition: service_healthy }
+  rabbitmq: { condition: service_healthy }
+  keys: { condition: service_completed_successfully }
 
 services:
   keys:
@@ -38,6 +44,27 @@ services:
       - ./deploy/postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U shop -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: shop
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-shop-local}
+    ports:
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -65,13 +92,49 @@ services:
     build:
       context: .
       args: { PROJECT: src/Services/Catalog/Shop.Catalog, APP: Shop.Catalog }
-    depends_on:
-      db: { condition: service_healthy }
-      keys: { condition: service_completed_successfully }
+    depends_on: *messaging
     environment:
       <<: *database
       ConnectionStrings__Catalog: "Host=db;Database=catalog;Username=shop;Password=${POSTGRES_PASSWORD:-shop-local}"
       Catalog__SeedDemoData: ${SEED_DEMO_DATA:-true}
+
+  inventory:
+    <<: *service
+    build:
+      context: .
+      args: { PROJECT: src/Services/Inventory/Shop.Inventory, APP: Shop.Inventory }
+    depends_on: *messaging
+    environment:
+      <<: *database
+      ConnectionStrings__Inventory: "Host=db;Database=inventory;Username=shop;Password=${POSTGRES_PASSWORD:-shop-local}"
+      # Opening stock for each product the catalog announces; the demo starts with 25 of everything.
+      Inventory__OpeningStock: ${OPENING_STOCK:-25}
+
+  ordering:
+    <<: *service
+    build:
+      context: .
+      args: { PROJECT: src/Services/Ordering/Shop.Ordering, APP: Shop.Ordering }
+    depends_on: *messaging
+    environment:
+      <<: *database
+      ConnectionStrings__Ordering: "Host=db;Database=ordering;Username=shop;Password=${POSTGRES_PASSWORD:-shop-local}"
+
+  basket:
+    <<: *service
+    build:
+      context: .
+      args: { PROJECT: src/Services/Basket/Shop.Basket, APP: Shop.Basket }
+    depends_on:
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      keys: { condition: service_completed_successfully }
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Jwt__PublicKeyPath: /keys/public/public.pem
+      ConnectionStrings__Redis: redis:6379
+      ConnectionStrings__RabbitMq: amqp://shop:${RABBITMQ_PASSWORD:-shop-local}@rabbitmq:5672
+      Services__Catalog: http://catalog:8080
 
   gateway:
     <<: *service
@@ -81,6 +144,9 @@ services:
     depends_on:
       identity: { condition: service_healthy }
       catalog: { condition: service_healthy }
+      basket: { condition: service_healthy }
+      inventory: { condition: service_healthy }
+      ordering: { condition: service_healthy }
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Jwt__PublicKeyPath: /keys/public/public.pem
@@ -88,6 +154,9 @@ services:
       RateLimits__RequestsPerMinute: ${REQUESTS_PER_MINUTE:-600}
       ReverseProxy__Clusters__identity__Destinations__primary__Address: http://identity:8080
       ReverseProxy__Clusters__catalog__Destinations__primary__Address: http://catalog:8080
+      ReverseProxy__Clusters__basket__Destinations__primary__Address: http://basket:8080
+      ReverseProxy__Clusters__inventory__Destinations__primary__Address: http://inventory:8080
+      ReverseProxy__Clusters__ordering__Destinations__primary__Address: http://ordering:8080
     ports:
       - "8080:8080"
 

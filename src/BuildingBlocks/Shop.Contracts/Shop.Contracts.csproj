@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Messages only: no logic and no dependencies, so every service can reference it. -->
+</Project>

@@ -22,6 +22,8 @@ public static class ErrorCodes
     public const string OutOfStock = "out_of_stock";
     public const string PaymentDeclined = "payment_declined";
     public const string RateLimited = "rate_limited";
+    public const string BasketChanged = "basket_changed";
+    public const string Unavailable = "service_unavailable";
 
     private static readonly Dictionary<string, int> Statuses = new(StringComparer.Ordinal)
     {
@@ -35,6 +37,8 @@ public static class ErrorCodes
         [OutOfStock] = 409,
         [PaymentDeclined] = 402,
         [RateLimited] = 429,
+        [BasketChanged] = 409,
+        [Unavailable] = 503,
     };
 
     /// <summary>Unknown codes are business rule failures (422).</summary>

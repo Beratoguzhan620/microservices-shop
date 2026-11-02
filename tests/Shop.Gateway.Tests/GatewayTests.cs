@@ -21,6 +21,20 @@ public sealed class GatewayTests(GatewayFactory factory) : IClassFixture<Gateway
         Assert.Equal(query, echo.Query);
     }
 
+    [Theory]
+    [InlineData("/api/basket")]
+    [InlineData("/api/ordering/orders")]
+    public async Task Customer_routes_need_a_valid_token_at_the_gateway(string url)
+    {
+        using var anonymous = factory.CreateClient();
+        using var forged = factory.CreateClient().WithToken(TestKeys.Token(Guid.NewGuid(), signingKey: System.Security.Cryptography.RSA.Create(2048)));
+        using var customer = factory.CreateClient().WithToken(TestKeys.Token(Guid.NewGuid()));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync(url)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await forged.GetAsync(url)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await customer.GetAsync(url)).StatusCode);
+    }
+
     [Fact]
     public async Task Unknown_paths_are_not_forwarded()
     {
@@ -91,6 +105,11 @@ public sealed class GatewayTests(GatewayFactory factory) : IClassFixture<Gateway
 
         Assert.Equal("catalog", catalog.RootElement.GetProperty("info").GetProperty("title").GetString());
         Assert.Equal("identity", identity.RootElement.GetProperty("info").GetProperty("title").GetString());
+        foreach (var name in new[] { "basket", "inventory", "ordering" })
+        {
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/openapi/{name}.json")).StatusCode);
+        }
+
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/scalar")).StatusCode);
     }
 

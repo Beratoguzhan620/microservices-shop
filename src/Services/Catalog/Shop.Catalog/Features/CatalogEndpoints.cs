@@ -1,8 +1,10 @@
 using System.Security.Claims;
+using MassTransit;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Shop.Catalog.Data;
 using Shop.Catalog.Products;
+using Shop.Contracts.Catalog;
 using Shop.ServiceDefaults;
 using Shop.ServiceDefaults.Auth;
 using Shop.ServiceDefaults.Errors;
@@ -26,6 +28,9 @@ public sealed record CreateProductRequest(string Sku, string Name, string? Descr
 /// <summary><c>Version</c> is the one read last; a newer change on the server makes the update a 409.</summary>
 public sealed record UpdateProductRequest(string Name, string? Description, decimal Price, Guid CategoryId, uint Version);
 
+/// <summary>What other services need to price a basket: the current price, and whether it is still sold.</summary>
+public sealed record ProductSnapshot(Guid Id, string Sku, string Name, decimal Price, bool IsActive);
+
 public enum ProductSort
 {
     Newest,
@@ -46,6 +51,8 @@ internal static class CatalogEndpoints
         shop.MapGet("/products", Search).WithSummary("Search products")
             .WithDescription("Filter by text, category slug and price; sort by `Newest`, `PriceAsc`, `PriceDesc` or `Name`. Archived products are only listed for admins who ask with `includeArchived=true`.");
         shop.MapGet("/products/{slug}", BySlug).WithSummary("One product by its slug");
+        shop.MapGet("/products/snapshots", Snapshots).WithSummary("Current prices of several products")
+            .WithDescription("For the basket: up to 50 ids (`ids=a&ids=b`); archived products are returned with `isActive: false`, unknown ids are left out.");
 
         var admin = app.MapGroup("/api/catalog").WithTags("Catalog administration").RequireAuthorization(AuthDefaults.AdminPolicy);
         admin.MapPost("/categories", CreateCategory).WithSummary("Add a category (admin)");
@@ -117,6 +124,20 @@ internal static class CatalogEndpoints
         return TypedResults.Ok(new ProductPage(items, total, page, pageSize));
     }
 
+    private static async Task<Results<Ok<List<ProductSnapshot>>, ValidationProblem>> Snapshots(Guid[] ids, CatalogDbContext db, CancellationToken ct)
+    {
+        var validation = new Validation().Require(ids.Length is >= 1 and <= 50, "ids", "Ask for 1 to 50 products.");
+        if (!validation.IsValid)
+        {
+            return validation.ToProblem();
+        }
+
+        return TypedResults.Ok(await db.Products.AsNoTracking()
+            .Where(p => ids.Contains(p.Id))
+            .Select(p => new ProductSnapshot(p.Id, p.Sku, p.Name, p.Price, p.IsActive))
+            .ToListAsync(ct));
+    }
+
     private static async Task<Ok<ProductResponse>> BySlug(string slug, CatalogDbContext db, ClaimsPrincipal user, CancellationToken ct)
     {
         var admin = user.IsInRole(ShopRoles.Admin);
@@ -140,7 +161,8 @@ internal static class CatalogEndpoints
         return TypedResults.Created($"/api/catalog/categories", new CategoryResponse(category.Id, category.Name, category.Slug, 0));
     }
 
-    private static async Task<Created<ProductResponse>> CreateProduct(CreateProductRequest request, CatalogDbContext db, TimeProvider clock, CancellationToken ct)
+    private static async Task<Created<ProductResponse>> CreateProduct(
+        CreateProductRequest request, CatalogDbContext db, IPublishEndpoint publish, TimeProvider clock, CancellationToken ct)
     {
         await EnsureCategoryAsync(db, request.CategoryId, ct);
         var product = Product.Create(request.Sku, request.Name, request.Description ?? string.Empty, request.Price, request.CategoryId, clock.GetUtcNow());
@@ -150,6 +172,9 @@ internal static class CatalogEndpoints
         }
 
         db.Products.Add(product);
+
+        // Written to the outbox with the product, so Inventory hears about every product that exists, and only those.
+        await publish.Publish(new ProductCreated(product.Id, product.Sku, product.Name, product.Price, product.CreatedAt), ct);
         try
         {
             await db.SaveChangesAsync(ct);
