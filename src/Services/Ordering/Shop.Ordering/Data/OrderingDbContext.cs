@@ -28,6 +28,8 @@ public sealed class OrderingDbContext(DbContextOptions<OrderingDbContext> option
         order.Property(o => o.Status).HasConversion<string>().HasMaxLength(20);
         order.Property(o => o.Total).HasPrecision(12, 2);
         order.Property(o => o.Reason).HasMaxLength(300);
+        order.Property(o => o.CardLast4).HasMaxLength(4);
+        order.Property(o => o.TrackingCode).HasMaxLength(40);
         order.HasIndex(o => new { o.CustomerId, o.CreatedAt });
         order.HasIndex(o => new { o.Status, o.CreatedAt });
         order.OwnsOne(o => o.ShippingAddress, address =>
@@ -63,6 +65,8 @@ internal sealed class OrderStateMap : SagaClassMap<OrderState>
         entity.ToTable("order_states");
         entity.Property(x => x.CurrentState).HasMaxLength(40);
         entity.Property(x => x.Total).HasPrecision(12, 2);
+        entity.Property(x => x.PaymentToken).HasMaxLength(40);
+        entity.HasIndex(x => new { x.CurrentState, x.PaymentDeadline });
     }
 }
 

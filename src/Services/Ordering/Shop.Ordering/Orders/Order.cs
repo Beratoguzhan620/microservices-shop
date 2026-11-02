@@ -10,7 +10,7 @@ public enum OrderStatus
     /// <summary>Stock is held; waiting for the payment.</summary>
     AwaitingPayment,
 
-    /// <summary>Paid and stock taken: the order will ship.</summary>
+    /// <summary>Paid, with its stock held: the order will ship.</summary>
     Confirmed,
 
     /// <summary>On its way to the customer.</summary>
@@ -77,6 +77,12 @@ public sealed class Order
 
     public string? Reason { get; private set; }
 
+    public string? CardLast4 { get; private set; }
+
+    public string? TrackingCode { get; private set; }
+
+    public bool Refunded { get; private set; }
+
     public DateTimeOffset CreatedAt { get; private set; }
 
     public DateTimeOffset UpdatedAt { get; private set; }
@@ -105,6 +111,29 @@ public sealed class Order
         Reason = reason ?? Reason;
         UpdatedAt = now;
     }
+
+    public void Paid(string cardLast4, DateTimeOffset now)
+    {
+        CardLast4 = cardLast4;
+        MoveTo(OrderStatus.Confirmed, now);
+    }
+
+    public void Ship(string trackingCode, DateTimeOffset now)
+    {
+        TrackingCode = trackingCode;
+        MoveTo(OrderStatus.Shipped, now);
+    }
+
+    public void MarkRefunded(DateTimeOffset now)
+    {
+        Refunded = true;
+        UpdatedAt = now;
+    }
+
+    /// <summary>Customers and admins may cancel until the order ships.</summary>
+    public bool CanCancel => Status is OrderStatus.Confirmed;
+
+    public bool CanShip => Status is OrderStatus.Confirmed;
 
     public IReadOnlyList<OrderLine> Lines() =>
         Items.Select(i => new OrderLine(i.ProductId, i.Sku, i.Name, i.UnitPrice, i.Quantity)).ToList();

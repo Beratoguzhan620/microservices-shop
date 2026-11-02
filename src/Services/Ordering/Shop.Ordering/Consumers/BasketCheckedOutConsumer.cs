@@ -22,6 +22,6 @@ public sealed class BasketCheckedOutConsumer(OrderingDbContext db) : IConsumer<B
 
         var order = Order.Place(checkout);
         db.Orders.Add(order);
-        await context.Publish(new OrderSubmitted(order.Id, order.CustomerId, order.Lines(), order.Total, checkout.At), context.CancellationToken);
+        await context.Publish(new OrderSubmitted(order.Id, order.CustomerId, order.Lines(), order.Total, checkout.PaymentToken, checkout.At), context.CancellationToken);
     }
 }

@@ -1,6 +1,8 @@
 using System.Security.Claims;
+using MassTransit;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
+using Shop.Contracts.Ordering;
 using Shop.Ordering.Data;
 using Shop.Ordering.Orders;
 using Shop.ServiceDefaults.Auth;
@@ -14,14 +16,19 @@ public sealed record AddressResponse(string FullName, string Line1, string City,
 
 public sealed record OrderResponse(
     Guid Id, OrderStatus Status, string? Reason, decimal Total, string Currency, IReadOnlyList<OrderItemResponse> Items,
-    AddressResponse ShippingAddress, string CustomerName, string CustomerEmail, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt)
+    AddressResponse ShippingAddress, string CustomerName, string CustomerEmail, string? CardLast4, string? TrackingCode, bool Refunded,
+    bool CanCancel, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt)
 {
     public static OrderResponse From(Order o) => new(
         o.Id, o.Status, o.Reason, o.Total, "TRY",
         o.Items.Select(i => new OrderItemResponse(i.ProductId, i.Sku, i.Name, i.UnitPrice, i.Quantity, i.UnitPrice * i.Quantity)).ToList(),
         new AddressResponse(o.ShippingAddress.FullName, o.ShippingAddress.Line1, o.ShippingAddress.City, o.ShippingAddress.PostalCode, o.ShippingAddress.Phone),
-        o.CustomerName, o.CustomerEmail, o.CreatedAt, o.UpdatedAt);
+        o.CustomerName, o.CustomerEmail, o.CardLast4, o.TrackingCode, o.Refunded, o.CanCancel, o.CreatedAt, o.UpdatedAt);
 }
+
+public sealed record CancelRequest(string? Reason);
+
+public sealed record ShipRequest(string TrackingCode);
 
 public sealed record OrderSummary(Guid Id, OrderStatus Status, decimal Total, int ItemCount, string CustomerName, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 
@@ -35,9 +42,13 @@ internal static class OrderEndpoints
         mine.MapGet("/", Mine).WithSummary("Your orders, newest first");
         mine.MapGet("/{id:guid}", Get).WithSummary("One order")
             .WithDescription("Right after checkout the order may not exist yet for a moment (404): it is created from the checkout message. Ask again.");
+        mine.MapPost("/{id:guid}/cancel", Cancel).WithSummary("Cancel an order before it ships")
+            .WithDescription("Possible while the order is Confirmed. The stock is released and the payment refunded; the answer is 202 and the order moves to Cancelled in a moment.");
 
         var admin = app.MapGroup("/api/ordering/admin/orders").WithTags("Order administration").RequireAuthorization(AuthDefaults.AdminPolicy);
         admin.MapGet("/", All).WithSummary("All orders (admin)").WithDescription("Filter by `status`; newest first.");
+        admin.MapPost("/{id:guid}/ship", Ship).WithSummary("Mark an order as handed to the carrier (admin)")
+            .WithDescription("Possible while the order is Confirmed. Its stock leaves the warehouse for good.");
         return app;
     }
 
@@ -49,15 +60,56 @@ internal static class OrderEndpoints
 
     private static async Task<Ok<OrderResponse>> Get(Guid id, ClaimsPrincipal user, OrderingDbContext db, CancellationToken ct)
     {
-        var order = await db.Orders.AsNoTracking().SingleOrDefaultAsync(o => o.Id == id, ct);
-
         // Someone else's order does not exist as far as the caller can tell.
-        if (order is null || (order.CustomerId != user.UserId() && !user.IsInRole(ShopRoles.Admin)))
+        return TypedResults.Ok(OrderResponse.From(await FindVisibleAsync(id, user, db, ct)));
+    }
+
+    private static async Task<Accepted<OrderResponse>> Cancel(
+        Guid id, CancelRequest? request, ClaimsPrincipal user, OrderingDbContext db, IPublishEndpoint publish, TimeProvider clock, CancellationToken ct)
+    {
+        var order = await FindVisibleAsync(id, user, db, ct);
+        if (!order.CanCancel)
         {
-            throw new DomainException(ErrorCodes.NotFound, "There is no such order (yet).");
+            throw new DomainException(ErrorCodes.InvalidState, order.Status == OrderStatus.Shipped
+                ? "The order has shipped; it can no longer be cancelled."
+                : $"A {order.Status.ToString().ToLowerInvariant()} order cannot be cancelled.");
         }
 
-        return TypedResults.Ok(OrderResponse.From(order));
+        var reason = string.IsNullOrWhiteSpace(request?.Reason)
+            ? (user.IsInRole(ShopRoles.Admin) && order.CustomerId != user.UserId() ? "Cancelled by the shop." : "Cancelled by the customer.")
+            : request.Reason.Trim()[..Math.Min(request.Reason.Trim().Length, 200)];
+        await publish.Publish(new OrderCancellationRequested(order.Id, reason, clock.GetUtcNow()), ct);
+        await db.SaveChangesAsync(ct);
+        return TypedResults.Accepted($"/api/ordering/orders/{order.Id}", OrderResponse.From(order));
+    }
+
+    private static async Task<Results<Accepted<OrderResponse>, ValidationProblem>> Ship(
+        Guid id, ShipRequest request, ClaimsPrincipal user, OrderingDbContext db, IPublishEndpoint publish, TimeProvider clock, CancellationToken ct)
+    {
+        var tracking = request.TrackingCode?.Trim() ?? string.Empty;
+        var validation = new Validation().Require(tracking.Length is >= 4 and <= 40, "trackingCode", "A tracking code has 4 to 40 characters.");
+        if (!validation.IsValid)
+        {
+            return validation.ToProblem();
+        }
+
+        var order = await FindVisibleAsync(id, user, db, ct);
+        if (!order.CanShip)
+        {
+            throw new DomainException(ErrorCodes.InvalidState, $"Only confirmed orders ship; this one is {order.Status.ToString().ToLowerInvariant()}.");
+        }
+
+        await publish.Publish(new OrderShipmentRequested(order.Id, tracking, clock.GetUtcNow()), ct);
+        await db.SaveChangesAsync(ct);
+        return TypedResults.Accepted($"/api/ordering/orders/{order.Id}", OrderResponse.From(order));
+    }
+
+    private static async Task<Order> FindVisibleAsync(Guid id, ClaimsPrincipal user, OrderingDbContext db, CancellationToken ct)
+    {
+        var order = await db.Orders.AsNoTracking().SingleOrDefaultAsync(o => o.Id == id, ct);
+        return order is not null && (order.CustomerId == user.UserId() || user.IsInRole(ShopRoles.Admin))
+            ? order
+            : throw new DomainException(ErrorCodes.NotFound, "There is no such order (yet).");
     }
 
     private static async Task<Results<Ok<OrderPage>, ValidationProblem>> All(
