@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MassTransit" />
+    <PackageReference Include="MassTransit.EntityFrameworkCore" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Shop.Contracts\Shop.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>
