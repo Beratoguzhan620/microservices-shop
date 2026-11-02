@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/src/BuildingBlocks/">
+    <Project Path="src/BuildingBlocks/Shop.ServiceDefaults/Shop.ServiceDefaults.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/">
+    <Project Path="src/Services/Identity/Shop.Identity/Shop.Identity.csproj" />
+    <Project Path="src/Services/Catalog/Shop.Catalog/Shop.Catalog.csproj" />
+  </Folder>
+  <Folder Name="/src/Gateway/">
+    <Project Path="src/Gateway/Shop.Gateway/Shop.Gateway.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Shop.Testing/Shop.Testing.csproj" />
+    <Project Path="tests/Shop.Identity.Tests/Shop.Identity.Tests.csproj" />
+    <Project Path="tests/Shop.Catalog.Tests/Shop.Catalog.Tests.csproj" />
+    <Project Path="tests/Shop.Gateway.Tests/Shop.Gateway.Tests.csproj" />
+  </Folder>
+</Solution>
