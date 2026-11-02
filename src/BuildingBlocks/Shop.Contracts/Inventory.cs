@@ -9,7 +9,7 @@ public sealed record StockReserved(Guid OrderId, DateTimeOffset At);
 
 public sealed record StockReservationFailed(Guid OrderId, string Reason, IReadOnlyList<Guid> UnavailableProductIds, DateTimeOffset At);
 
-/// <summary>The order went through: the held quantities leave the warehouse for good.</summary>
+/// <summary>The order shipped: the held quantities leave the warehouse for good.</summary>
 public sealed record CommitStock(Guid OrderId);
 
 /// <summary>The order did not go through: whatever was held for it is available again.</summary>

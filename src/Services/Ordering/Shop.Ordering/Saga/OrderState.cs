@@ -14,4 +14,9 @@ public sealed class OrderState : SagaStateMachineInstance
     public decimal Total { get; set; }
 
     public DateTimeOffset SubmittedAt { get; set; }
+
+    public string PaymentToken { get; set; } = string.Empty;
+
+    /// <summary>When the order gives up on its payment; the deadline sweeper looks for orders past it.</summary>
+    public DateTimeOffset? PaymentDeadline { get; set; }
 }

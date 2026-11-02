@@ -9,7 +9,7 @@ public sealed class GatewayFactory : WebApplicationFactory<DownstreamHealthCheck
 {
     public const int AuthPerMinute = 5;
 
-    public static readonly string[] Clusters = ["identity", "catalog", "basket", "inventory", "ordering"];
+    public static readonly string[] Clusters = ["identity", "catalog", "basket", "inventory", "ordering", "payment"];
 
     public Dictionary<string, StubService> Stubs { get; } = [];
 

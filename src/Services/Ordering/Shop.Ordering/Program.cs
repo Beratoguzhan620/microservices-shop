@@ -25,6 +25,9 @@ builder.Services.AddShopMessaging<OrderingDbContext>(builder.Configuration, bus 
         });
 });
 
+builder.Services.AddSingleton<PaymentDeadlineSweeper>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<PaymentDeadlineSweeper>());
+
 var app = builder.Build();
 app.UseServiceDefaults();
 app.MapServiceDefaults();

@@ -14,6 +14,7 @@ internal static class GatewayPolicies
         ("basket", "Basket"),
         ("ordering", "Ordering"),
         ("inventory", "Inventory"),
+        ("payment", "Payment"),
         ("identity", "Identity"),
     ];
 

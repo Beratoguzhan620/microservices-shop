@@ -246,6 +246,11 @@ namespace Shop.Ordering.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("CardLast4")
+                        .HasMaxLength(4)
+                        .HasColumnType("character varying(4)")
+                        .HasColumnName("card_last4");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -271,6 +276,10 @@ namespace Shop.Ordering.Data.Migrations
                         .HasColumnType("character varying(300)")
                         .HasColumnName("reason");
 
+                    b.Property<bool>("Refunded")
+                        .HasColumnType("boolean")
+                        .HasColumnName("refunded");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -281,6 +290,11 @@ namespace Shop.Ordering.Data.Migrations
                         .HasPrecision(12, 2)
                         .HasColumnType("numeric(12,2)")
                         .HasColumnName("total");
+
+                    b.Property<string>("TrackingCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("tracking_code");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -314,6 +328,16 @@ namespace Shop.Ordering.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("customer_id");
 
+                    b.Property<DateTimeOffset?>("PaymentDeadline")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("payment_deadline");
+
+                    b.Property<string>("PaymentToken")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("payment_token");
+
                     b.Property<DateTimeOffset>("SubmittedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("submitted_at");
@@ -325,6 +349,9 @@ namespace Shop.Ordering.Data.Migrations
 
                     b.HasKey("CorrelationId")
                         .HasName("pk_order_states");
+
+                    b.HasIndex("CurrentState", "PaymentDeadline")
+                        .HasDatabaseName("ix_order_states_current_state_payment_deadline");
 
                     b.ToTable("order_states", (string)null);
                 });

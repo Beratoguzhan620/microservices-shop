@@ -21,8 +21,11 @@ public sealed record SetQuantityRequest(int Quantity);
 
 public sealed record AddressRequest(string FullName, string Line1, string City, string PostalCode, string Phone);
 
-/// <summary><c>ExpectedTotal</c> is the total the customer was shown; if prices moved since, nothing is ordered.</summary>
-public sealed record CheckoutRequest(AddressRequest Address, decimal ExpectedTotal);
+/// <summary>
+/// <c>ExpectedTotal</c> is the total the customer was shown; if prices moved since, nothing is ordered.
+/// <c>PaymentToken</c> comes from <c>POST /api/payment/cards</c>; card details never pass through here.
+/// </summary>
+public sealed record CheckoutRequest(AddressRequest Address, decimal ExpectedTotal, string PaymentToken);
 
 public sealed record CheckoutResponse(Guid OrderId);
 
@@ -96,7 +99,8 @@ internal static class BasketEndpoints
             .Require(Text(address?.Line1, 5, 200), "address.line1", "Write the street address.")
             .Require(Text(address?.City, 2, 60), "address.city", "Write the city.")
             .Require(address?.PostalCode is { } code && code.Trim().Length == 5 && code.Trim().All(char.IsAsciiDigit), "address.postalCode", "A postal code has 5 digits.")
-            .Require(address?.Phone is { } phone && phone.Count(char.IsAsciiDigit) is >= 10 and <= 13, "address.phone", "Write a phone number with 10 to 13 digits.");
+            .Require(address?.Phone is { } phone && phone.Count(char.IsAsciiDigit) is >= 10 and <= 13, "address.phone", "Write a phone number with 10 to 13 digits.")
+            .Require(request.PaymentToken is { Length: > 4 and <= 40 } token && token.StartsWith("tok_", StringComparison.Ordinal), "paymentToken", "Add a card first.");
         if (!validation.IsValid)
         {
             return validation.ToProblem();
@@ -136,7 +140,7 @@ internal static class BasketEndpoints
                 orderId, customerId, user.EmailAddress(), user.DisplayName(),
                 basket.Lines.Select(l => new OrderLine(l.ProductId, l.Sku, l.Name, l.UnitPrice, l.Quantity)).ToList(),
                 new ShippingAddress(address!.FullName.Trim(), address.Line1.Trim(), address.City.Trim(), address.PostalCode.Trim(), address.Phone.Trim()),
-                now), ct);
+                request.PaymentToken, now), ct);
             return TypedResults.Accepted($"/api/ordering/orders/{orderId}", new CheckoutResponse(orderId));
         }
         catch

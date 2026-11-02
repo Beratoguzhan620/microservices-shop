@@ -56,6 +56,7 @@ public static class ServiceDefaultsExtensions
             .AddDocumentTransformer<SecuritySchemesTransformer>()
             .AddOperationTransformer<SecuritySchemesTransformer>());
         builder.Services.AddHealthChecks();
+        builder.AddTracing(service);
         return builder;
     }
 

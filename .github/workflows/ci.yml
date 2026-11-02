@@ -30,9 +30,38 @@ jobs:
       - name: Check for model changes without a migration
         run: |
           dotnet tool install --global dotnet-ef --version 10.0.14
-          for service in Identity Catalog Inventory Ordering; do
+          for service in Identity Catalog Inventory Ordering Payment; do
             dotnet ef migrations has-pending-model-changes --project src/Services/$service/Shop.$service --no-build --configuration Release
           done
+
+  web:
+    name: Storefront
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Type check
+        run: npm run check
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
 
   docker:
     name: Docker Compose smoke test
@@ -42,7 +71,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Start the stack
-        run: docker compose up --build --detach --wait --wait-timeout 300
+        run: docker compose up --build --detach --wait --wait-timeout 420
 
       - name: Register, browse, and change the catalog as admin through the gateway
         run: |
@@ -68,9 +97,11 @@ jobs:
             available=$(curl -sf "$api/api/inventory/availability?ids=$product" | jq -r '.[0].available // empty')
             [ -n "$available" ] && break; sleep 1
           done
+          card=$(curl -sf $api/api/payment/cards -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            -d '{"number":"4242 4242 4242 4242","expiryMonth":12,"expiryYear":2030,"cvc":"123"}' | jq -r .token)
           total=$(curl -sf -X PUT "$api/api/basket/items/$product" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"quantity":2}' | jq -r .total)
           order=$(curl -sf $api/api/basket/checkout -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
-            -d "{\"address\":{\"fullName\":\"Ayşe Yılmaz\",\"line1\":\"Atatürk Cad. No: 24/5\",\"city\":\"Samsun\",\"postalCode\":\"55060\",\"phone\":\"05551234567\"},\"expectedTotal\":$total}" | jq -r .orderId)
+            -d "{\"address\":{\"fullName\":\"Ayşe Yılmaz\",\"line1\":\"Atatürk Cad. No: 24/5\",\"city\":\"Samsun\",\"postalCode\":\"55060\",\"phone\":\"05551234567\"},\"expectedTotal\":$total,\"paymentToken\":\"$card\"}" | jq -r .orderId)
           for i in $(seq 1 30); do
             status=$(curl -s "$api/api/ordering/orders/$order" -H "Authorization: Bearer $token" | jq -r '.status // empty')
             [ "$status" = "Confirmed" ] && break; sleep 1
@@ -79,11 +110,53 @@ jobs:
           [ "$status" = "Confirmed" ]
           after=$(curl -sf "$api/api/inventory/availability?ids=$product" | jq -r '.[0].available')
           [ "$after" -eq $((available - 2)) ]
-          echo "Stock went from $available to $after."
+          echo "Paid, and the stock held for it: $available → $after available."
+          curl -sf "$api/api/ordering/orders/$order" -H "Authorization: Bearer $token" | jq -e '.cardLast4 == "4242"' > /dev/null
 
       - name: Show logs
         if: failure()
         run: docker compose logs --no-color
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes
+
+  e2e:
+    name: A customer and the admin in browsers
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start the stack
+        env:
+          AUTH_ATTEMPTS_PER_MINUTE: '1000'
+        run: docker compose up --build --detach --wait --wait-timeout 420
+
+      - name: Install Playwright
+        working-directory: tests/e2e
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Run the walkthrough
+        working-directory: tests/e2e
+        run: node shop.mjs
+
+      - name: Show logs
+        if: failure()
+        run: docker compose logs --no-color gateway ordering inventory payment basket
+
+      - name: Keep the last screenshot
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-output
+          path: tests/e2e/output/
 
       - name: Stop the stack
         if: always()
