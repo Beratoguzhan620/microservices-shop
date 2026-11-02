@@ -11,6 +11,9 @@ internal static class GatewayPolicies
     public static readonly (string Name, string Title)[] Documents =
     [
         ("catalog", "Catalog"),
+        ("basket", "Basket"),
+        ("ordering", "Ordering"),
+        ("inventory", "Inventory"),
         ("identity", "Identity"),
     ];
 
