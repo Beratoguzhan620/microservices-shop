@@ -1,0 +1,97 @@
+# One command: docker compose up --build
+# Shop API through the gateway: http://localhost:8080 (reference at /scalar)
+name: shop
+
+x-service: &service
+  build:
+    context: .
+  restart: on-failure
+  volumes:
+    - public-key:/keys/public:ro
+  healthcheck:
+    test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q Healthy <&3"]
+    interval: 5s
+    timeout: 5s
+    retries: 30
+
+x-database: &database
+  Database__MigrateOnStartup: "true"
+  Jwt__PublicKeyPath: /keys/public/public.pem
+  ASPNETCORE_ENVIRONMENT: Production
+
+services:
+  keys:
+    image: alpine:3.20
+    command: ["sh", "/deploy/keys.sh"]
+    volumes:
+      - ./deploy/keys.sh:/deploy/keys.sh:ro
+      - private-key:/private
+      - public-key:/public
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shop-local}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./deploy/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  identity:
+    <<: *service
+    build:
+      context: .
+      args: { PROJECT: src/Services/Identity/Shop.Identity, APP: Shop.Identity }
+    depends_on:
+      db: { condition: service_healthy }
+      keys: { condition: service_completed_successfully }
+    volumes:
+      - public-key:/keys/public:ro
+      - private-key:/keys/private:ro
+    environment:
+      <<: *database
+      ConnectionStrings__Identity: "Host=db;Database=identity;Username=shop;Password=${POSTGRES_PASSWORD:-shop-local}"
+      Jwt__PrivateKeyPath: /keys/private/private.pem
+      Identity__Admin__Email: ${ADMIN_EMAIL:-admin@shop.local}
+      Identity__Admin__Password: ${ADMIN_PASSWORD:-admin-password-change-me}
+
+  catalog:
+    <<: *service
+    build:
+      context: .
+      args: { PROJECT: src/Services/Catalog/Shop.Catalog, APP: Shop.Catalog }
+    depends_on:
+      db: { condition: service_healthy }
+      keys: { condition: service_completed_successfully }
+    environment:
+      <<: *database
+      ConnectionStrings__Catalog: "Host=db;Database=catalog;Username=shop;Password=${POSTGRES_PASSWORD:-shop-local}"
+      Catalog__SeedDemoData: ${SEED_DEMO_DATA:-true}
+
+  gateway:
+    <<: *service
+    build:
+      context: .
+      args: { PROJECT: src/Gateway/Shop.Gateway, APP: Shop.Gateway }
+    depends_on:
+      identity: { condition: service_healthy }
+      catalog: { condition: service_healthy }
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Jwt__PublicKeyPath: /keys/public/public.pem
+      RateLimits__AuthPerMinute: ${AUTH_ATTEMPTS_PER_MINUTE:-10}
+      RateLimits__RequestsPerMinute: ${REQUESTS_PER_MINUTE:-600}
+      ReverseProxy__Clusters__identity__Destinations__primary__Address: http://identity:8080
+      ReverseProxy__Clusters__catalog__Destinations__primary__Address: http://catalog:8080
+    ports:
+      - "8080:8080"
+
+volumes:
+  db-data:
+  private-key:
+  public-key:

@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Shop.slnx
+
+      - name: Build
+        run: dotnet build Shop.slnx --no-restore --configuration Release
+
+      - name: Tests (PostgreSQL in Testcontainers)
+        run: dotnet test Shop.slnx --no-build --configuration Release --logger "console;verbosity=normal"
+
+      - name: Check for model changes without a migration
+        run: |
+          dotnet tool install --global dotnet-ef --version 10.0.14
+          for service in Identity Catalog; do
+            dotnet ef migrations has-pending-model-changes --project src/Services/$service/Shop.$service --no-build --configuration Release
+          done
+
+  docker:
+    name: Docker Compose smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the stack
+        run: docker compose up --build --detach --wait --wait-timeout 300
+
+      - name: Register, browse, and change the catalog as admin through the gateway
+        run: |
+          api=http://localhost:8080
+          curl -sf $api/health/ready | jq -e '.status == "Healthy"' > /dev/null
+          curl -sf "$api/api/catalog/products?category=kahve" | jq -e '.total >= 5' > /dev/null
+          curl -sf $api/api/identity/register -H 'Content-Type: application/json' \
+            -d '{"email":"ayse@example.com","displayName":"Ayşe","password":"smoke-test-password"}' | jq -e '.user.role == "Customer"' > /dev/null
+          admin=$(curl -sf $api/api/identity/login -H 'Content-Type: application/json' \
+            -d '{"email":"admin@shop.local","password":"admin-password-change-me"}' | jq -r .accessToken)
+          category=$(curl -sf "$api/api/catalog/categories" | jq -r '.[0].id')
+          curl -sf $api/api/catalog/products -H "Authorization: Bearer $admin" -H 'Content-Type: application/json' \
+            -d "{\"sku\":\"SMK-001\",\"name\":\"Smoke Test Fincan\",\"price\":99.90,\"categoryId\":\"$category\"}" | jq -e '.slug == "smoke-test-fincan"' > /dev/null
+          echo "Registered, browsed and added a product through the gateway."
+
+      - name: Show logs
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes
