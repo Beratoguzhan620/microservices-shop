@@ -1,0 +1,11 @@
+{
+  "name": "shop-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "shop": "node shop.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.55.0"
+  }
+}
