@@ -15,6 +15,8 @@ public sealed class BasketTests(BasketFactory factory)
         fullName = "Ayşe Yılmaz", line1 = "Atatürk Cad. No: 24/5", city = "Samsun", postalCode = "55060", phone = "0555 123 45 67",
     };
 
+    private const string Token = "tok_0123456789abcdef";
+
     private static async Task<BasketResponse> SetAsync(HttpClient client, Guid productId, int quantity)
     {
         var response = await client.PutAsJsonAsync($"/api/basket/items/{productId}", new { quantity });
@@ -74,7 +76,7 @@ public sealed class BasketTests(BasketFactory factory)
         using var customer = factory.Customer(customerId);
         var basket = await SetAsync(customer, coffee, 2);
 
-        var response = await customer.PostAsJsonAsync("/api/basket/checkout", new { address = Address, expectedTotal = basket.Total });
+        var response = await customer.PostAsJsonAsync("/api/basket/checkout", new { address = Address, expectedTotal = basket.Total, paymentToken = Token });
 
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
         var orderId = (await response.ReadAsync<CheckoutResponse>()).OrderId;
@@ -83,6 +85,7 @@ public sealed class BasketTests(BasketFactory factory)
         Assert.Equal(customerId, checkout.CustomerId);
         Assert.Equal(858m, checkout.Lines.Sum(l => l.Total));
         Assert.Equal("55060", checkout.Address.PostalCode);
+        Assert.Equal(Token, checkout.PaymentToken);
         Assert.Empty((await customer.GetFromJsonAsync<BasketResponse>("/api/basket", Http.Json))!.Lines);
     }
 
@@ -94,7 +97,7 @@ public sealed class BasketTests(BasketFactory factory)
         var basket = await SetAsync(customer, coffee, 2);
         factory.Catalog.Products[coffee] = factory.Catalog.Products[coffee] with { Price = 459m };
 
-        var response = await customer.PostAsJsonAsync("/api/basket/checkout", new { address = Address, expectedTotal = basket.Total });
+        var response = await customer.PostAsJsonAsync("/api/basket/checkout", new { address = Address, expectedTotal = basket.Total, paymentToken = Token });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -103,7 +106,7 @@ public sealed class BasketTests(BasketFactory factory)
         Assert.Contains("429.00 → 459.00", body.RootElement.GetProperty("detail").GetString(), StringComparison.Ordinal);
         Assert.Equal(918m, (await customer.GetFromJsonAsync<BasketResponse>("/api/basket", Http.Json))!.Total);
 
-        var confirmed = await customer.PostAsJsonAsync("/api/basket/checkout", new { address = Address, expectedTotal = 918m });
+        var confirmed = await customer.PostAsJsonAsync("/api/basket/checkout", new { address = Address, expectedTotal = 918m, paymentToken = Token });
         Assert.Equal(HttpStatusCode.Accepted, confirmed.StatusCode);
     }
 
@@ -115,7 +118,7 @@ public sealed class BasketTests(BasketFactory factory)
         var basket = await SetAsync(customer, coffee, 1);
 
         var responses = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ =>
-            customer.PostAsJsonAsync("/api/basket/checkout", new { address = Address, expectedTotal = basket.Total })));
+            customer.PostAsJsonAsync("/api/basket/checkout", new { address = Address, expectedTotal = basket.Total, paymentToken = Token })));
 
         Assert.Equal(1, responses.Count(r => r.StatusCode == HttpStatusCode.Accepted));
         Assert.All(responses.Where(r => r.StatusCode != HttpStatusCode.Accepted), r => Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode));
@@ -130,7 +133,7 @@ public sealed class BasketTests(BasketFactory factory)
         factory.Catalog.Down = true;
         try
         {
-            var response = await customer.PostAsJsonAsync("/api/basket/checkout", new { address = Address, expectedTotal = basket.Total });
+            var response = await customer.PostAsJsonAsync("/api/basket/checkout", new { address = Address, expectedTotal = basket.Total, paymentToken = Token });
 
             Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
             Assert.Equal("service_unavailable", await response.ProblemCodeAsync());
@@ -141,6 +144,18 @@ public sealed class BasketTests(BasketFactory factory)
         }
 
         Assert.Single((await customer.GetFromJsonAsync<BasketResponse>("/api/basket", Http.Json))!.Lines);
+    }
+
+    [Fact]
+    public async Task A_checkout_without_a_card_is_refused()
+    {
+        var coffee = factory.Catalog.Add("Kenya AA 250 g", 429m);
+        using var customer = factory.Customer();
+        var basket = await SetAsync(customer, coffee, 1);
+
+        var response = await customer.PostAsJsonAsync("/api/basket/checkout", new { address = Address, expectedTotal = basket.Total, paymentToken = "4242424242424242" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Theory]
@@ -157,6 +172,7 @@ public sealed class BasketTests(BasketFactory factory)
         {
             address = new { fullName = name, line1, city, postalCode = postal, phone },
             expectedTotal = basket.Total,
+            paymentToken = Token,
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
