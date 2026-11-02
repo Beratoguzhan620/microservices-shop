@@ -9,7 +9,18 @@ export function dateTime(iso: string): string {
   return new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-export const shortId = (id: string) => id.replace(/-/g, "").slice(-8).toUpperCase();
+/**
+ * A short reference for people. Order ids are sequential GUIDs whose last digits are a counter shared by
+ * many orders, so no slice of the id tells orders apart; an FNV-1a hash of the whole id does.
+ */
+export function shortId(id: string): string {
+  let hash = 0x811c9dc5;
+  for (const char of id.toLowerCase()) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(36).toUpperCase().padStart(7, "0");
+}
 
 export const statusLabel: Record<OrderStatus, string> = {
   Submitted: "Received",

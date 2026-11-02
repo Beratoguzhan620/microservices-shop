@@ -24,8 +24,12 @@ describe("format", () => {
     expect(isInFlight("Confirmed")).toBe(false);
   });
 
-  it("shortens order ids for people", () => {
-    expect(shortId("0195f3c2-8a1b-7c4d-9e2f-3a4b5c6d7e8f")).toBe("5C6D7E8F");
+  it("gives sequential order ids short references that differ", () => {
+    const ids = ["08df391b-976c-5592-7c1d-d88401000000", "08df391b-9a12-5592-7c1d-d88401000000", "08df391c-0001-5592-7c1d-d88401000000"];
+    const refs = ids.map(shortId);
+    expect(new Set(refs).size).toBe(ids.length);
+    for (const ref of refs) expect(ref).toMatch(/^[0-9A-Z]{7}$/);
+    expect(shortId(ids[0].toUpperCase())).toBe(refs[0]);
   });
 });
 

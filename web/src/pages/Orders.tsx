@@ -1,5 +1,5 @@
 import { ArrowLeft, Check, Loader2, Package, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { dateTime, isInFlight, money, progress, shortId } from "../format";
 import { useLoad } from "../hooks";
@@ -35,7 +35,8 @@ export function Orders() {
 }
 
 /** The order as it moves: right after checkout it may not exist yet, so the page keeps asking until it settles. */
-export function OrderPage({ id, admin = false, awaitChangeFrom }: { id: string; admin?: boolean; awaitChangeFrom?: string }) {
+/** One order; `actions` (the admin's ship form) go under the items. */
+export function OrderPage({ id, admin = false, awaitChangeFrom, actions }: { id: string; admin?: boolean; awaitChangeFrom?: string; actions?: ReactNode }) {
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -135,6 +136,7 @@ export function OrderPage({ id, admin = false, awaitChangeFrom }: { id: string; 
         </p>
       </section>
 
+      {actions}
       {error && <p className="form-error" role="alert">{error}</p>}
       {order.canCancel && !admin && (
         <button className="button danger" onClick={cancel} disabled={cancelling}>
