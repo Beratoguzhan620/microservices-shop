@@ -1,5 +1,5 @@
 # One command: docker compose up --build
-# Shop API through the gateway: http://localhost:8080 (reference at /scalar)
+# The shop: http://localhost:8080 · API reference: http://localhost:8080/scalar
 # RabbitMQ console: http://localhost:15672 · Traces in Jaeger: http://localhost:16686
 name: shop
 
@@ -181,8 +181,23 @@ services:
       ReverseProxy__Clusters__inventory__Destinations__primary__Address: http://inventory:8080
       ReverseProxy__Clusters__ordering__Destinations__primary__Address: http://ordering:8080
       ReverseProxy__Clusters__payment__Destinations__primary__Address: http://payment:8080
+      # nginx is in front: per-address limits must see the browser's address, not nginx's.
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    restart: on-failure
+    depends_on:
+      gateway: { condition: service_healthy }
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
 volumes:
   db-data:
