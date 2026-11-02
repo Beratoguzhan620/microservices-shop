@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Shop.Catalog.Features;
+using Shop.Contracts.Catalog;
 using Shop.Testing;
 
 namespace Shop.Catalog.Tests.Integration;
@@ -74,6 +75,28 @@ public sealed class BrowsingTests(CatalogFactory factory)
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/catalog/products/no-such-thing")).StatusCode);
     }
 
+    [Fact]
+    public async Task Snapshots_give_current_prices_and_whether_products_are_still_sold()
+    {
+        using var client = factory.CreateClient();
+        var products = (await PageAsync(client, "?category=cay&sort=Name")).Items;
+
+        var snapshots = await client.GetFromJsonAsync<List<ProductSnapshot>>(
+            $"/api/catalog/products/snapshots?ids={products[0].Id}&ids={products[1].Id}&ids={Guid.NewGuid()}", Http.Json);
+
+        Assert.Equal(2, snapshots!.Count);
+        Assert.All(snapshots, s => Assert.True(s.IsActive));
+        Assert.Equal(products[0].Price, snapshots.Single(s => s.Id == products[0].Id).Price);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/catalog/products/snapshots")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Every_demo_product_was_announced_to_the_other_services()
+    {
+        Assert.True(await factory.Harness.Published.Any<ProductCreated>(m => m.Context.Message.Sku == "KHV-001"));
+        Assert.True(factory.Harness.Published.Select<ProductCreated>().Count() >= 16);
+    }
+
     private static async Task<ProductPage> PageAsync(HttpClient client, string query) =>
         (await client.GetFromJsonAsync<ProductPage>($"/api/catalog/products{query}", Http.Json))!;
 }
@@ -111,6 +134,7 @@ public sealed class AdministrationTests(CatalogFactory factory)
         var second = await CreateAsync(admin, category, "Çift Cidarlı Bardak");
 
         Assert.Equal("cift-cidarli-bardak", first.Slug);
+        Assert.True(await factory.Harness.Published.Any<ProductCreated>(m => m.Context.Message.ProductId == first.Id));
         Assert.Equal($"cift-cidarli-bardak-{second.Sku.ToLowerInvariant()}", second.Slug);
     }
 

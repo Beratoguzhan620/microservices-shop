@@ -9,29 +9,37 @@ public sealed class GatewayFactory : WebApplicationFactory<DownstreamHealthCheck
 {
     public const int AuthPerMinute = 5;
 
-    public StubService Identity { get; private set; } = null!;
+    public static readonly string[] Clusters = ["identity", "catalog", "basket", "inventory", "ordering"];
 
-    public StubService Catalog { get; private set; } = null!;
+    public Dictionary<string, StubService> Stubs { get; } = [];
+
+    public StubService Catalog => Stubs["catalog"];
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
         builder.UseSetting("Jwt:PublicKey", TestKeys.PublicKeyPem);
         builder.UseSetting("RateLimits:AuthPerMinute", AuthPerMinute.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        builder.UseSetting("ReverseProxy:Clusters:identity:Destinations:primary:Address", Identity.Address);
-        builder.UseSetting("ReverseProxy:Clusters:catalog:Destinations:primary:Address", Catalog.Address);
+        foreach (var (name, stub) in Stubs)
+        {
+            builder.UseSetting($"ReverseProxy:Clusters:{name}:Destinations:primary:Address", stub.Address);
+        }
     }
 
     public async Task InitializeAsync()
     {
-        Identity = await StubService.StartAsync("identity");
-        Catalog = await StubService.StartAsync("catalog");
+        foreach (var name in Clusters)
+        {
+            Stubs[name] = await StubService.StartAsync(name);
+        }
     }
 
     async Task IAsyncLifetime.DisposeAsync()
     {
         await base.DisposeAsync();
-        await Identity.DisposeAsync();
-        await Catalog.DisposeAsync();
+        foreach (var stub in Stubs.Values)
+        {
+            await stub.DisposeAsync();
+        }
     }
 }
