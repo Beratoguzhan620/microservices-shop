@@ -161,3 +161,31 @@ jobs:
       - name: Stop the stack
         if: always()
         run: docker compose down --volumes
+
+  resilience:
+    name: Scarce stock and services that go down
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start the stack
+        env:
+          AUTH_ATTEMPTS_PER_MINUTE: '100000'
+          REQUESTS_PER_MINUTE: '100000'
+        run: docker compose up --build --detach --wait --wait-timeout 420
+
+      - name: Run the resilience checks
+        run: bash tests/resilience/run.sh
+
+      - name: Show logs
+        if: failure()
+        run: docker compose logs --no-color ordering inventory payment basket
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes
