@@ -88,22 +88,19 @@ export function AdminOrder({ id }: { id: string }) {
 
   const ship = (e: FormEvent) => { e.preventDefault(); act("ship", () => api.ship(id, tracking)); };
 
-  return (
-    <>
-      {order.data?.status === "Confirmed" && (
-        <form className="card section ship" onSubmit={ship} aria-label="Ship">
-          <h2><Truck size={17} /> Ready to ship</h2>
-          <div className="row wrap">
-            <label className="field grow">Tracking code<input className="input mono" value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="YK-123456789" /></label>
-            <button className="button primary" disabled={busy !== null || tracking.trim().length < 4}>{busy === "ship" && <Loader2 size={15} className="spin" />}Mark as shipped</button>
-            <button type="button" className="button danger" disabled={busy !== null} onClick={() => act("cancel", () => api.cancel(id, "Cancelled by the shop."))}>
-              {busy === "cancel" ? <Loader2 size={15} className="spin" /> : <X size={15} />}Cancel and refund
-            </button>
-          </div>
-          {error && <p className="form-error" role="alert">{error}</p>}
-        </form>
-      )}
-      <div key={version}><OrderPage id={id} admin awaitChangeFrom={from} /></div>
-    </>
+  const actions = order.data?.status === "Confirmed" && (
+    <form className="card section ship" onSubmit={ship} aria-label="Ship">
+      <h2><Truck size={17} /> Ready to ship</h2>
+      <div className="row wrap">
+        <label className="field grow">Tracking code<input className="input mono" value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="YK-123456789" /></label>
+        <button className="button primary" disabled={busy !== null || tracking.trim().length < 4}>{busy === "ship" && <Loader2 size={15} className="spin" />}Mark as shipped</button>
+        <button type="button" className="button danger" disabled={busy !== null} onClick={() => act("cancel", () => api.cancel(id, "Cancelled by the shop."))}>
+          {busy === "cancel" ? <Loader2 size={15} className="spin" /> : <X size={15} />}Cancel and refund
+        </button>
+      </div>
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </form>
   );
+
+  return <div key={version}><OrderPage id={id} admin awaitChangeFrom={from} actions={actions || undefined} /></div>;
 }
