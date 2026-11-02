@@ -19,6 +19,8 @@ service is down halfway through or a message arrives twice.
 
 ## Stages
 
+All five are done; the [README](../README.md) describes the result.
+
 | # | Stage | Contents |
 |---|---|---|
 | 1 | Skeleton | Shared service defaults, Identity (accounts, RS256 tokens, admin from configuration), Catalog (products, categories, search, admin with optimistic concurrency), YARP gateway, Compose, CI |
