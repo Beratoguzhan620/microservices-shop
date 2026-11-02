@@ -14,6 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\BuildingBlocks\Shop.Messaging\Shop.Messaging.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\Shop.ServiceDefaults\Shop.ServiceDefaults.csproj" />
   </ItemGroup>
 

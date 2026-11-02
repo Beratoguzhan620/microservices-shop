@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Shop.Catalog.Products;
+using Shop.Messaging;
 
 namespace Shop.Catalog.Data;
 
@@ -34,6 +35,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         product.HasIndex(p => p.Sku).IsUnique();
         product.HasIndex(p => p.Slug).IsUnique();
         product.HasIndex(p => new { p.IsActive, p.CategoryId, p.Price });
+
+        modelBuilder.AddOutboxTables();
     }
 
     public static void Configure(DbContextOptionsBuilder options, string connectionString) =>

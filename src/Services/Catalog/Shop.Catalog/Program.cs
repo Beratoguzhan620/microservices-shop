@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Shop.Catalog.Data;
 using Shop.Catalog.Features;
+using Shop.Messaging;
 using Shop.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +11,7 @@ builder.AddServiceDefaults(new ServiceInfo("catalog", "Catalog",
 var connectionString = Persistence.ConnectionString(builder.Configuration, "Catalog");
 builder.Services.AddDbContext<CatalogDbContext>(options => CatalogDbContext.Configure(options, connectionString));
 builder.Services.AddHealthChecks().AddDbContextCheck<CatalogDbContext>("database", tags: ["ready"]);
+builder.Services.AddShopMessaging<CatalogDbContext>(builder.Configuration);
 
 var app = builder.Build();
 app.UseServiceDefaults();
