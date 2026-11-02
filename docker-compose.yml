@@ -1,5 +1,6 @@
 # One command: docker compose up --build
-# Shop API through the gateway: http://localhost:8080 (reference at /scalar); RabbitMQ console: http://localhost:15672
+# Shop API through the gateway: http://localhost:8080 (reference at /scalar)
+# RabbitMQ console: http://localhost:15672 · Traces in Jaeger: http://localhost:16686
 name: shop
 
 x-service: &service
@@ -16,6 +17,7 @@ x-service: &service
 
 x-database: &database
   Database__MigrateOnStartup: "true"
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
   Jwt__PublicKeyPath: /keys/public/public.pem
   ASPNETCORE_ENVIRONMENT: Production
   ConnectionStrings__RabbitMq: amqp://shop:${RABBITMQ_PASSWORD:-shop-local}@rabbitmq:5672
@@ -60,6 +62,13 @@ services:
       interval: 5s
       timeout: 10s
       retries: 30
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
 
   redis:
     image: redis:7-alpine
@@ -119,6 +128,7 @@ services:
     environment:
       <<: *database
       ConnectionStrings__Ordering: "Host=db;Database=ordering;Username=shop;Password=${POSTGRES_PASSWORD:-shop-local}"
+      Ordering__PaymentTimeoutSeconds: ${PAYMENT_TIMEOUT_SECONDS:-60}
 
   basket:
     <<: *service
@@ -135,6 +145,17 @@ services:
       ConnectionStrings__Redis: redis:6379
       ConnectionStrings__RabbitMq: amqp://shop:${RABBITMQ_PASSWORD:-shop-local}@rabbitmq:5672
       Services__Catalog: http://catalog:8080
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+
+  payment:
+    <<: *service
+    build:
+      context: .
+      args: { PROJECT: src/Services/Payment/Shop.Payment, APP: Shop.Payment }
+    depends_on: *messaging
+    environment:
+      <<: *database
+      ConnectionStrings__Payment: "Host=db;Database=payment;Username=shop;Password=${POSTGRES_PASSWORD:-shop-local}"
 
   gateway:
     <<: *service
@@ -147,8 +168,10 @@ services:
       basket: { condition: service_healthy }
       inventory: { condition: service_healthy }
       ordering: { condition: service_healthy }
+      payment: { condition: service_healthy }
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
       Jwt__PublicKeyPath: /keys/public/public.pem
       RateLimits__AuthPerMinute: ${AUTH_ATTEMPTS_PER_MINUTE:-10}
       RateLimits__RequestsPerMinute: ${REQUESTS_PER_MINUTE:-600}
@@ -157,6 +180,7 @@ services:
       ReverseProxy__Clusters__basket__Destinations__primary__Address: http://basket:8080
       ReverseProxy__Clusters__inventory__Destinations__primary__Address: http://inventory:8080
       ReverseProxy__Clusters__ordering__Destinations__primary__Address: http://ordering:8080
+      ReverseProxy__Clusters__payment__Destinations__primary__Address: http://payment:8080
     ports:
       - "8080:8080"
 

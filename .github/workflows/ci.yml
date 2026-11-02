@@ -30,7 +30,7 @@ jobs:
       - name: Check for model changes without a migration
         run: |
           dotnet tool install --global dotnet-ef --version 10.0.14
-          for service in Identity Catalog Inventory Ordering; do
+          for service in Identity Catalog Inventory Ordering Payment; do
             dotnet ef migrations has-pending-model-changes --project src/Services/$service/Shop.$service --no-build --configuration Release
           done
 
@@ -68,9 +68,11 @@ jobs:
             available=$(curl -sf "$api/api/inventory/availability?ids=$product" | jq -r '.[0].available // empty')
             [ -n "$available" ] && break; sleep 1
           done
+          card=$(curl -sf $api/api/payment/cards -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            -d '{"number":"4242 4242 4242 4242","expiryMonth":12,"expiryYear":2030,"cvc":"123"}' | jq -r .token)
           total=$(curl -sf -X PUT "$api/api/basket/items/$product" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"quantity":2}' | jq -r .total)
           order=$(curl -sf $api/api/basket/checkout -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
-            -d "{\"address\":{\"fullName\":\"Ayşe Yılmaz\",\"line1\":\"Atatürk Cad. No: 24/5\",\"city\":\"Samsun\",\"postalCode\":\"55060\",\"phone\":\"05551234567\"},\"expectedTotal\":$total}" | jq -r .orderId)
+            -d "{\"address\":{\"fullName\":\"Ayşe Yılmaz\",\"line1\":\"Atatürk Cad. No: 24/5\",\"city\":\"Samsun\",\"postalCode\":\"55060\",\"phone\":\"05551234567\"},\"expectedTotal\":$total,\"paymentToken\":\"$card\"}" | jq -r .orderId)
           for i in $(seq 1 30); do
             status=$(curl -s "$api/api/ordering/orders/$order" -H "Authorization: Bearer $token" | jq -r '.status // empty')
             [ "$status" = "Confirmed" ] && break; sleep 1
@@ -79,7 +81,8 @@ jobs:
           [ "$status" = "Confirmed" ]
           after=$(curl -sf "$api/api/inventory/availability?ids=$product" | jq -r '.[0].available')
           [ "$after" -eq $((available - 2)) ]
-          echo "Stock went from $available to $after."
+          echo "Paid, and the stock held for it: $available → $after available."
+          curl -sf "$api/api/ordering/orders/$order" -H "Authorization: Bearer $token" | jq -e '.cardLast4 == "4242"' > /dev/null
 
       - name: Show logs
         if: failure()

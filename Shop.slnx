@@ -10,6 +10,7 @@
     <Project Path="src/Services/Basket/Shop.Basket/Shop.Basket.csproj" />
     <Project Path="src/Services/Inventory/Shop.Inventory/Shop.Inventory.csproj" />
     <Project Path="src/Services/Ordering/Shop.Ordering/Shop.Ordering.csproj" />
+    <Project Path="src/Services/Payment/Shop.Payment/Shop.Payment.csproj" />
   </Folder>
   <Folder Name="/src/Gateway/">
     <Project Path="src/Gateway/Shop.Gateway/Shop.Gateway.csproj" />
@@ -21,6 +22,7 @@
     <Project Path="tests/Shop.Basket.Tests/Shop.Basket.Tests.csproj" />
     <Project Path="tests/Shop.Inventory.Tests/Shop.Inventory.Tests.csproj" />
     <Project Path="tests/Shop.Ordering.Tests/Shop.Ordering.Tests.csproj" />
+    <Project Path="tests/Shop.Payment.Tests/Shop.Payment.Tests.csproj" />
     <Project Path="tests/Shop.Gateway.Tests/Shop.Gateway.Tests.csproj" />
   </Folder>
 </Solution>
