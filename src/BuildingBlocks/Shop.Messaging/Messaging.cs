@@ -32,7 +32,8 @@ public static class Messaging
                 outbox.UsePostgres();
                 outbox.UseBusOutbox();
                 outbox.IsolationLevel = IsolationLevel.ReadCommitted;
-                outbox.QueryDelay = TimeSpan.FromMilliseconds(500);
+                // Each hop of the saga waits for this poll at most, so it stays short; the query is an index lookup.
+                outbox.QueryDelay = TimeSpan.FromMilliseconds(100);
                 outbox.DuplicateDetectionWindow = TimeSpan.FromDays(1);
             });
 
